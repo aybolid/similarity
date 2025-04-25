@@ -29,6 +29,7 @@ export class SearchCommand implements CliCommand {
       .select({
         chunkId: fileChunks.chunkId,
         content: fileChunks.content,
+        page: fileChunks.pageNumber,
         similarity,
       })
       .from(fileChunks)
@@ -43,7 +44,9 @@ export class SearchCommand implements CliCommand {
 
     console.log(`Found ${similarChunks.length} similar chunk(s):\n`);
     for (const chunk of similarChunks) {
-      console.log(`Chunk ${chunk.chunkId} (similarity: ${chunk.similarity})\n`);
+      console.log(
+        `Chunk ${chunk.chunkId} (page: ${chunk.page}; similarity: ${chunk.similarity})\n`,
+      );
       console.log(`${chunk.content}\n`);
     }
   }
