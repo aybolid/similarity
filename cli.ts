@@ -11,7 +11,10 @@ if (!command) {
 const cmd = registry[command]!;
 
 cmd.parseArgs(args);
+
+const now = performance.now();
 await cmd.run();
+console.log(`Done in ${((performance.now() - now) / 1000).toFixed(2)}s`);
 
 // const inputEmbedding = await generateEmbedding(input);
 

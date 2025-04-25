@@ -1,10 +1,12 @@
 import { EchoCommand } from "./echo";
 import type { CliCommand } from "./interface";
 import { LoadFileCommand } from "./load-file";
+import { SearchCommand } from "./search";
 
 const commandsMap: Record<string, CliCommand> = {
   echo: new EchoCommand(),
   loadfile: new LoadFileCommand(),
+  search: new SearchCommand(),
 };
 
 export const registry = new Proxy(commandsMap, {

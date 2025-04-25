@@ -29,7 +29,6 @@ export class LoadFileCommand implements CliCommand {
   }
 
   async run(): Promise<void> {
-    const now = performance.now();
     if (!existsSync(this.#path)) {
       console.error(`File not found: ${this.#path}`);
       process.exit(1);
@@ -57,7 +56,6 @@ export class LoadFileCommand implements CliCommand {
 
     console.log("Generating embeddings for file chunks...");
     await this.#saveChunksWithEmbeddings(dbFile!, pagesMap);
-    console.log(`Done ${((performance.now() - now) / 1000).toFixed(2)}s`);
   }
 
   async #saveChunksWithEmbeddings(
