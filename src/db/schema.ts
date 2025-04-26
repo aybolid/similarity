@@ -8,6 +8,7 @@ import {
   timestamp,
   vector,
 } from "drizzle-orm/pg-core";
+import { EMBEDDING_DIMENSIONS } from "../constants";
 
 export const files = pgTable("files", {
   fileId: serial("file_id").primaryKey(),
@@ -27,7 +28,9 @@ export const fileChunks = pgTable(
     chunkId: serial("chunk_id").primaryKey(),
     fileId: serial("file_id").notNull(),
     content: text("content").notNull(),
-    embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+    embedding: vector("embedding", {
+      dimensions: EMBEDDING_DIMENSIONS,
+    }).notNull(),
     pageNumber: integer("page_number").notNull(),
   },
   (table) => [

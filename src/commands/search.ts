@@ -2,9 +2,10 @@ import { parseArgs } from "util";
 import { generateEmbedding } from "../openai/embeddings";
 import type { CliCommand } from "./interface";
 import { findSimilarChunksByCosineDistance } from "../db/file-chunks";
-
-const DEFAULT_LIMIT = 5;
-const DEFAULT_THRESHOLD = 0.78;
+import {
+  DEFAULT_SIMILARITY_SEARCH_LIMIT,
+  DEFAULT_SIMILARITY_SEARCH_THRESHOLD,
+} from "../constants";
 
 export class SearchCommand implements CliCommand {
   readonly name = "search";
@@ -12,8 +13,8 @@ export class SearchCommand implements CliCommand {
     "Find similar chunks in the DB based on a query embedding.";
 
   #query = "";
-  #limit = DEFAULT_LIMIT;
-  #threshold = DEFAULT_THRESHOLD;
+  #limit = DEFAULT_SIMILARITY_SEARCH_LIMIT;
+  #threshold = DEFAULT_SIMILARITY_SEARCH_THRESHOLD;
 
   parseArgs(args: string[]): void {
     const { positionals, values } = parseArgs({
@@ -23,12 +24,12 @@ export class SearchCommand implements CliCommand {
         limit: {
           type: "string",
           short: "l",
-          default: String(DEFAULT_LIMIT),
+          default: String(DEFAULT_SIMILARITY_SEARCH_LIMIT),
         },
         threshold: {
           type: "string",
           short: "t",
-          default: String(DEFAULT_THRESHOLD),
+          default: String(DEFAULT_SIMILARITY_SEARCH_THRESHOLD),
         },
         help: {
           type: "boolean",
@@ -85,8 +86,8 @@ Positional:
   <query>               Text to search for
 
 Options:
-  -l, --limit <number>      Max chunks to return (default: ${DEFAULT_LIMIT})
-  -t, --threshold <number>  Similarity threshold 0.0–1.0 (default: ${DEFAULT_THRESHOLD})
+  -l, --limit <number>      Max chunks to return (default: ${DEFAULT_SIMILARITY_SEARCH_LIMIT})
+  -t, --threshold <number>  Similarity threshold 0.0–1.0 (default: ${DEFAULT_SIMILARITY_SEARCH_THRESHOLD})
   -h, --help                Show this help
 `.trim(),
     );
