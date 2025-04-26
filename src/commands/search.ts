@@ -1,9 +1,7 @@
 import { parseArgs } from "util";
-import { cosineDistance, desc, gt, sql } from "drizzle-orm";
 import { generateEmbedding } from "../openai/embeddings";
 import type { CliCommand } from "./interface";
-import { fileChunks } from "../db/schema";
-import { db } from "../db";
+import { findSimilarChunksByCosineDistance } from "../db/file-chunks";
 
 const DEFAULT_LIMIT = 5;
 const DEFAULT_THRESHOLD = 0.78;
@@ -102,21 +100,14 @@ Options:
     console.log(
       `Searching for similar chunks (limit: ${this.#limit}; threshold: ${this.#threshold})…`,
     );
-    const similarity = sql<number>`
-      1 - (${cosineDistance(fileChunks.embedding, queryEmbedding)})
-    `;
 
-    const similarChunks = await db
-      .select({
-        chunkId: fileChunks.chunkId,
-        content: fileChunks.content,
-        page: fileChunks.pageNumber,
-        similarity,
-      })
-      .from(fileChunks)
-      .where(gt(similarity, this.#threshold))
-      .orderBy((t) => desc(t.similarity))
-      .limit(this.#limit);
+    const similarChunks = await findSimilarChunksByCosineDistance(
+      queryEmbedding,
+      {
+        limit: this.#limit,
+        threshold: this.#threshold,
+      },
+    );
 
     if (similarChunks.length === 0) {
       console.log("No similar chunks found.");
