@@ -7,6 +7,7 @@ import {
   DEFAULT_SIMILARITY_SEARCH_LIMIT,
   DEFAULT_SIMILARITY_SEARCH_THRESHOLD,
 } from "../constants";
+import { writeFile } from "fs/promises";
 
 export class AskCommand implements CliCommand {
   readonly name = "ask";
@@ -16,6 +17,7 @@ export class AskCommand implements CliCommand {
   #query = "";
   #limit = DEFAULT_SIMILARITY_SEARCH_LIMIT;
   #threshold = DEFAULT_SIMILARITY_SEARCH_THRESHOLD;
+  #md = false;
 
   parseArgs(args: string[]): void {
     const { positionals, values } = parseArgs({
@@ -36,6 +38,10 @@ export class AskCommand implements CliCommand {
           type: "boolean",
           short: "h",
         },
+        md: {
+          type: "boolean",
+          default: false,
+        },
       },
     });
 
@@ -43,6 +49,8 @@ export class AskCommand implements CliCommand {
       this.printHelp();
       process.exit(0);
     }
+
+    this.#md = values.md;
 
     if (positionals.length === 0) {
       console.error("Error: Missing <query>.");
@@ -88,6 +96,7 @@ Usage:
 Options:
   -l, --limit <number>      Maximum number of chunks to search (default: ${DEFAULT_SIMILARITY_SEARCH_LIMIT})
   -t, --threshold <number>  Similarity threshold 0.0–1.0 (default: ${DEFAULT_SIMILARITY_SEARCH_THRESHOLD})
+  --md                      Saves output to markdown file
   -h, --help                Show this help message
 `.trim(),
     );
@@ -142,6 +151,7 @@ Options:
       ],
     });
 
+    let out = "";
     for await (const event of stream) {
       switch (event.type) {
         case "response.output_text.delta":
@@ -152,6 +162,7 @@ Options:
           console.log(event.type + "\n");
           break;
         case "response.output_text.done":
+          out = event.text;
           console.log("\n\n" + event.type);
           break;
         default:
@@ -171,5 +182,39 @@ Options:
         );
       }
     }
+
+    if (this.#md) {
+      console.log("\nSaving result as markdown file");
+      await this.#saveOutToMd(this.#query, out, similarChunks);
+    }
+  }
+
+  async #saveOutToMd(
+    userPrompt: string,
+    aiResponse: string,
+    similarChunks: {
+      chunkId: number;
+      content: string;
+      page: number;
+      similarity: number;
+    }[],
+  ) {
+    let text = "### User prompt:\n\n" + userPrompt;
+    text += "\n\n### AI response:\n\n" + aiResponse;
+    text += "\n\n---\n\n";
+    text += "### Chunks used to prompt AI:\n\n";
+    for (const chunk of similarChunks) {
+      text += `#### Chunk ID: ${chunk.chunkId}\n`;
+      text += `- Page: ${chunk.page}\n`;
+      text += `- Similarity: ${chunk.similarity.toFixed(4)}\n`;
+      text += `\n> ${chunk.content}\n\n`;
+    }
+
+    if (similarChunks.length === 0) {
+      text += "No similar chunks were found.";
+    }
+
+    const filename = `out_${Date.now()}.md`;
+    await writeFile(filename, text, "utf-8");
   }
 }
