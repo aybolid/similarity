@@ -8,110 +8,126 @@ import { fileChunks, files, type DbFile } from "../db/schema";
 import { generateEmbedding } from "../openai/embeddings";
 
 export class LoadFileCommand implements CliCommand {
-  #path: string = "";
+  readonly name = "loadfile";
+  readonly description =
+    "Load a PDF into the DB: split into per-page chunks and generate embeddings.";
+
+  #path = "";
 
   parseArgs(args: string[]): void {
-    const { values } = parseArgs({
+    const { positionals, values } = parseArgs({
       args,
+      allowPositionals: true,
       options: {
-        path: {
-          type: "string",
-          short: "p",
-          description: "Path to the file to load",
+        help: {
+          type: "boolean",
+          short: "h",
         },
       },
     });
-    if (!values.path) {
-      console.error("Usage: bun run cli.ts loadfile -p <path>");
+
+    if (values.help) {
+      this.printHelp();
+      process.exit(0);
+    }
+
+    if (positionals.length !== 1) {
+      console.error("Error: Missing or extra <path> argument.");
+      this.printHelp();
       process.exit(1);
     }
-    this.#path = values.path;
+
+    this.#path = positionals[0]!;
+  }
+
+  printHelp(): void {
+    console.log(
+      `
+${this.description}
+
+Usage:
+  bun run cli.ts ${this.name} <path-to-pdf>
+
+Positional:
+  <path>    Path to a PDF file to ingest
+
+Options:
+  -h, --help    Show this help message
+`.trim(),
+    );
   }
 
   async run(): Promise<void> {
     if (!existsSync(this.#path)) {
-      console.error(`File not found: ${this.#path}`);
+      console.error(`Error: File not found at "${this.#path}".`);
       process.exit(1);
     }
-
     if (!this.#path.toLowerCase().endsWith(".pdf")) {
-      console.error("Only PDF files are supported");
+      console.error("Error: Only .pdf files are supported.");
       process.exit(1);
     }
 
-    console.log("Extracting text from PDF");
+    console.log("→ Extracting text from PDF…");
     const pagesMap = await this.#extractTextFromPdfPerPage();
-    console.log(`Extracted text from ${Object.keys(pagesMap).length} pages`);
+    console.log(`Extracted ${Object.keys(pagesMap).length} pages of text`);
 
     const [dbFile] = await db
       .insert(files)
       .values({ name: this.#path })
       .returning();
-    console.log("Stored file in database");
+    console.log("File record created in DB:");
     console.table({
       fileId: dbFile?.fileId,
       name: dbFile?.name,
-      createdAt: dbFile?.createdAt?.toString(),
+      createdAt: dbFile?.createdAt?.toISOString(),
     });
 
-    console.log("Generating embeddings for file chunks...");
+    console.log("→ Generating & saving embeddings per page…");
     await this.#saveChunksWithEmbeddings(dbFile!, pagesMap);
+    console.log("All embeddings saved");
   }
 
   async #saveChunksWithEmbeddings(
     dbFile: DbFile,
     pagesMap: Record<number, string>,
   ) {
-    const promises = Object.entries(pagesMap).map(
-      async ([pageNumberString, pageContent]) => {
-        const pageNumber = parseInt(pageNumberString, 10);
-        const embedding = await generateEmbedding(pageContent);
-        console.log(
-          `\tEmbedding for file chunk generated (page: ${pageNumber})`,
-        );
-        await db.insert(fileChunks).values({
-          embedding,
-          pageNumber,
-          content: pageContent,
-          fileId: dbFile.fileId,
-        });
-      },
-    );
+    const tasks = Object.entries(pagesMap).map(async ([pageNoStr, content]) => {
+      const pageNumber = Number(pageNoStr);
+      const embedding = await generateEmbedding(content);
+      await db.insert(fileChunks).values({
+        fileId: dbFile.fileId,
+        pageNumber,
+        content,
+        embedding,
+      });
+      console.log(`  • Page ${pageNumber} embedded`);
+    });
 
-    const results = await Promise.allSettled(promises);
-
-    for (const result of results) {
-      if (result.status === "rejected") {
-        console.error(`Failed to save chunk: ${result.reason}`);
+    const results = await Promise.allSettled(tasks);
+    for (const res of results) {
+      if (res.status === "rejected") {
+        console.error("Failed to save a chunk:", res.reason);
       }
     }
   }
 
   async #extractTextFromPdfPerPage(): Promise<Record<number, string>> {
-    const pdfBuffer = await readFile(this.#path);
-    const pdfData = new Uint8Array(pdfBuffer);
+    const buffer = await readFile(this.#path);
     const loadingTask = pdfjsLib.getDocument({
-      data: pdfData,
+      data: new Uint8Array(buffer),
       useSystemFonts: true,
       disableFontFace: true,
     });
-    const pdfDoc = await loadingTask.promise;
-    const numPages = pdfDoc.numPages;
+    const pdf = await loadingTask.promise;
+    const pages: Record<number, string> = {};
 
-    const result: Record<number, string> = {};
-
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdfDoc.getPage(i);
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item: any) => item.str).join(" ");
-
-      if (i % 5 === 0) {
-        console.write(".");
-      }
-      result[i] = pageText;
+      pages[i] = content.items.map((it: any) => it.str).join(" ");
+      if (i % 5 === 0) process.stdout.write(".");
     }
-    console.write("\n");
-
-    return result;
+    process.stdout.write("\n");
+    return pages;
   }
 }

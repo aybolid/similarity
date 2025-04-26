@@ -8,6 +8,14 @@ if (!command) {
   process.exit(1);
 }
 
+if (command === "-h" || command === "--help") {
+  console.log("Usage: bun run cli.ts <command> [options]");
+  for (const [name, cmd] of Object.entries(registry)) {
+    console.log(`  ${name}:\n    ${cmd.description}`);
+  }
+  process.exit(0);
+}
+
 const cmd = registry[command]!;
 
 cmd.parseArgs(args);

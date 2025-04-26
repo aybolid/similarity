@@ -1,29 +1,110 @@
+import { parseArgs } from "util";
 import { cosineDistance, desc, gt, sql } from "drizzle-orm";
 import { generateEmbedding } from "../openai/embeddings";
 import type { CliCommand } from "./interface";
 import { fileChunks } from "../db/schema";
 import { db } from "../db";
 
+const DEFAULT_LIMIT = 5;
+const DEFAULT_THRESHOLD = 0.78;
+
 export class SearchCommand implements CliCommand {
-  #query: string = "";
+  readonly name = "search";
+  readonly description =
+    "Find similar chunks in the DB based on a query embedding.";
+
+  #query = "";
+  #limit = DEFAULT_LIMIT;
+  #threshold = DEFAULT_THRESHOLD;
 
   parseArgs(args: string[]): void {
-    if (args.length === 0) {
-      console.error("Usage: bun run cli.ts search <query>");
+    const { positionals, values } = parseArgs({
+      args,
+      allowPositionals: true,
+      options: {
+        limit: {
+          type: "string",
+          short: "l",
+          default: String(DEFAULT_LIMIT),
+        },
+        threshold: {
+          type: "string",
+          short: "t",
+          default: String(DEFAULT_THRESHOLD),
+        },
+        help: {
+          type: "boolean",
+          short: "h",
+        },
+      },
+    });
+
+    if (values.help) {
+      this.printHelp();
+      process.exit(0);
+    }
+
+    if (positionals.length === 0) {
+      console.error("Error: Missing <query>.");
+      this.printHelp();
       process.exit(1);
     }
-    this.#query = args.join(" ");
+
+    this.#query = positionals.join(" ");
+
+    const parsedLimit = parseInt(values.limit, 10);
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      console.error(
+        `Error: --limit must be a positive integer (got "${values.limit}").`,
+      );
+      process.exit(1);
+    }
+    this.#limit = parsedLimit;
+
+    const parsedThreshold = parseFloat(values.threshold);
+    if (
+      Number.isNaN(parsedThreshold) ||
+      parsedThreshold < 0 ||
+      parsedThreshold > 1
+    ) {
+      console.error(
+        `Error: --threshold must be between 0.0 and 1.0 (got "${values.threshold}").`,
+      );
+      process.exit(1);
+    }
+    this.#threshold = parsedThreshold;
+  }
+
+  printHelp(): void {
+    console.log(
+      `
+${this.description}
+
+Usage:
+  bun run cli.ts ${this.name} <query> [options]
+
+Positional:
+  <query>               Text to search for
+
+Options:
+  -l, --limit <number>      Max chunks to return (default: ${DEFAULT_LIMIT})
+  -t, --threshold <number>  Similarity threshold 0.0–1.0 (default: ${DEFAULT_THRESHOLD})
+  -h, --help                Show this help
+`.trim(),
+    );
   }
 
   async run(): Promise<void> {
-    console.log("Generating query embedding...");
+    console.log("Generating query embedding…");
     const queryEmbedding = await generateEmbedding(this.#query);
     console.log("Query embedding generated");
 
     console.log(
-      `Searching for similar chunks... (limit: ${5}; similarity threshold: ${0.78})`,
+      `Searching for similar chunks (limit: ${this.#limit}; threshold: ${this.#threshold})…`,
     );
-    const similarity = sql<number>`1 - (${cosineDistance(fileChunks.embedding, queryEmbedding)})`;
+    const similarity = sql<number>`
+      1 - (${cosineDistance(fileChunks.embedding, queryEmbedding)})
+    `;
 
     const similarChunks = await db
       .select({
@@ -33,21 +114,21 @@ export class SearchCommand implements CliCommand {
         similarity,
       })
       .from(fileChunks)
-      .where(gt(similarity, 0.78))
+      .where(gt(similarity, this.#threshold))
       .orderBy((t) => desc(t.similarity))
-      .limit(5);
+      .limit(this.#limit);
 
     if (similarChunks.length === 0) {
-      console.log("No similar chunks found!");
+      console.log("No similar chunks found.");
       return;
     }
 
-    console.log(`Found ${similarChunks.length} similar chunk(s):\n`);
-    for (const chunk of similarChunks) {
+    console.log(`Found ${similarChunks.length} chunk(s):\n`);
+    for (const { chunkId, page, similarity, content } of similarChunks) {
       console.log(
-        `Chunk ${chunk.chunkId} (page: ${chunk.page}; similarity: ${chunk.similarity})\n`,
+        `• Chunk ${chunkId} — page ${page} — sim: ${similarity.toFixed(4)}`,
       );
-      console.log(`${chunk.content}\n`);
+      console.log(content + "\n");
     }
   }
 }

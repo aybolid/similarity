@@ -1,14 +1,16 @@
 import { AskCommand } from "./ask";
-import { EchoCommand } from "./echo";
 import type { CliCommand } from "./interface";
 import { LoadFileCommand } from "./load-file";
 import { SearchCommand } from "./search";
 
+const loadfile = new LoadFileCommand();
+const search = new SearchCommand();
+const ask = new AskCommand();
+
 const commandsMap: Record<string, CliCommand> = {
-  echo: new EchoCommand(),
-  loadfile: new LoadFileCommand(),
-  search: new SearchCommand(),
-  ask: new AskCommand(),
+  [loadfile.name]: loadfile,
+  [search.name]: search,
+  [ask.name]: ask,
 };
 
 export const registry = new Proxy(commandsMap, {
@@ -16,7 +18,9 @@ export const registry = new Proxy(commandsMap, {
     if (prop in target) {
       return Reflect.get(target, prop);
     }
-    throw new Error(`Command not found: ${String(prop)}`);
+    console.error(`Command not found: ${String(prop)}`);
+    console.log("bun run cli.ts -h to see available commands");
+    process.exit(1);
   },
   set() {
     throw new Error("What are you doing?");
